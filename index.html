@@ -16,6 +16,7 @@
   
   <!-- 解析されても意味不明な汎用入力フォーム -->
   <div id="v-app">
+    <p style="font-size: 14px; color: #333; margin-bottom: 10px;">あなたのキーを入力してください</p>
     <input type="password" id="v-inp">
     <button id="v-btn">OK</button>
   </div>
@@ -28,13 +29,9 @@
       const val = document.getElementById('v-inp').value;
       if (!val) return;
 
-      // 🌟 ここでSupabaseにアクセスして、キーが合っていたら
-      // 「しょーでん用の画面UI」や「チャットのテキスト」をごっそり持ってくる処理を書く
-      // 例: const { data } = await supabase.from('app_config').select('ui_html').eq('key', val);
-
-      // ⚠️ 今はテスト用。Supabaseから秘密のUIデータを受け取ったと仮定するよ
+      // 🌟 ここでSupabaseにアクセスする処理（今はダミー）
       const isSuccess = true; 
-      const serverData = "<h2>秘密部屋🤫</h2><div style='height:400px;border:1px solid #ccc;'></div><input type='text'><button>送信</button>"; // ←これがSupabaseの中にあるイメージ
+      const serverData = "<h2>秘密部屋🤫</h2><div style='height:400px;border:1px solid #ccc;'></div><input type='text'><button>送信</button>"; 
 
       if (isSuccess) {
         document.getElementById('v-app').classList.add('hidden');
@@ -44,7 +41,7 @@
         
         const main = document.getElementById('v-main');
         main.classList.remove('hidden');
-        main.innerHTML = serverData; // 空箱にサーバーから来たチャット画面をブチ込む
+        main.innerHTML = serverData; 
       }
     });
   </script>
