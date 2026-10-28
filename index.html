@@ -6,7 +6,6 @@
   <title>404 Not Found</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; height: 100vh; height: 100dvh; background-color: #fff; overflow: hidden; }
     
     #dummy-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 50px 20px; box-sizing: border-box; text-align: center; z-index: 10; background-color: #fff; }
@@ -14,12 +13,8 @@
     #dummy-screen p { font-size: 14px; color: #666; }
     #secret-input { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; border: none; background: transparent; color: transparent; outline: none; caret-color: transparent; }
 
-    
     #chat-app { display: none; flex-direction: column; height: 100%; background-color: #f7f9fc; position: relative; z-index: 20; }
-    
-    
     #lock-screen-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #fff; z-index: 9999; justify-content: center; align-items: center; font-size: 24px; color: #555; font-weight: bold; }
-    
     
     #header { display: none; justify-content: space-between; align-items: center; padding: max(12px, env(safe-area-inset-top)) 15px 12px; background-color: #fff; border-bottom: 1px solid #ddd; font-weight: bold; }
     #lock-btn { padding: 6px 12px; border: none; border-radius: 15px; cursor: pointer; font-size: 14px; background-color: #f1f3f5; transition: 0.2s; }
@@ -34,14 +29,13 @@
     .bubble img, .bubble video, .bubble audio { max-width: 100%; border-radius: 10px; margin-top: 5px; outline: none; }
     .bubble a { color: #0066cc; text-decoration: underline; font-weight: bold; word-break: break-all; }
     
-    
     .chat-mode-shoden .my-message { background-color: #d0ebff; border-bottom-right-radius: 3px; color: #333; }
     .chat-mode-shoden .their-message { background-color: #fce4ec; border-bottom-left-radius: 3px; color: #333; }
     .chat-mode-juwaden .my-message { background-color: #fce4ec; border-bottom-right-radius: 3px; color: #333; }
     .chat-mode-juwaden .their-message { background-color: #d0ebff; border-bottom-left-radius: 3px; color: #333; }
     
     #input-area { display: flex; align-items: flex-end; padding: 10px 10px max(10px, env(safe-area-inset-bottom)); background-color: #fff; border-top: 1px solid #ddd; gap: 8px; }
-    #file-label { background-color: #f1f3f5; padding: 10px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
+    #file-label { background-color: #f1f3f5; padding: 10px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; transition: background-color 0.2s; }
     #file-input { display: none; }
     #message-input { flex: 1; resize: none; border: 1px solid #ccc; border-radius: 18px; padding: 10px 15px; font-size: 15px; max-height: 100px; outline: none; }
     #send-btn { color: white; border: none; border-radius: 18px; padding: 10px 15px; font-size: 15px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
@@ -50,25 +44,19 @@
   </style>
 </head>
 <body>
-
- 
   <div id="dummy-screen">
     <h1>404 Not Found</h1>
     <p>The requested URL was not found on this server.</p>
     <input type="text" id="secret-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
   </div>
 
-  
   <div id="chat-app">
     <div id="lock-screen-overlay">今は使えないよ💦</div>
-    
     <div id="header">
       <span>俺</span>
       <button id="lock-btn">🔓 ロックしてない</button>
     </div>
-    
     <div id="chat-box"></div>
-    
     <div id="input-area">
       <label id="file-label">📁<input type="file" id="file-input"></label>
       <textarea id="message-input" rows="1" placeholder="メッセージを入力..."></textarea>
@@ -77,7 +65,6 @@
   </div>
 
   <script>
-    // Supabase設定
     const supabaseUrl = 'https://vxlhivwuyfsjlydbjhfz.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4bGhpdnd1eWZzamx5ZGJqaGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NDE5NDYsImV4cCI6MjEwODUxNzk0Nn0.9_hBOLttjOlM1xaZlQmekR1Tt5_zEYQL1ltuMozCAS8';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -87,7 +74,6 @@
     let isLocked = false;
     let isAppInitialized = false;
 
-    // 要素取得
     const dummyScreen = document.getElementById('dummy-screen');
     const secretInput = document.getElementById('secret-input');
     const chatApp = document.getElementById('chat-app');
@@ -98,61 +84,40 @@
     const messageInput = document.getElementById('message-input');
     const fileInput = document.getElementById('file-input');
     const sendBtn = document.getElementById('send-btn');
+    const fileLabel = document.getElementById('file-label');
 
-    // ----------------------------------------------------
-    // 【極秘】認証と画面切り替え（難読化バージョン）
-    // ----------------------------------------------------
+    // 認証
     const _0x4a9b = [
       "%E3%81%82%E3%81%84%E3%81%86%E3%81%88%E3%81%8A", 
-      "%E3%81%82%E3%82%80%E3%82%8D%E3%81%A8%E3%82%8B%E3%81%86%E3%81%8F%E3%81%A8%E3%81%B5%E3%82%8B%E3%81%B1%E3%82%8F%E3%83%BC%E3%82%8A%E3%81%A3%E3%81%8F", // ju
+      "%E3%81%82%E3%82%80%E3%82%8D%E3%81%A8%E3%82%8B%E3%81%86%E3%81%8F%E3%81%A8%E3%81%B5%E3%82%8B%E3%81%B1%E3%82%8F%E3%83%BC%E3%82%8A%E3%81%A3%E3%81%8F", 
       "%E3%81%8B%E3%81%8D%E3%81%8F%E3%81%91%E3%81%93", 
       "%E3%81%95%E3%81%97%E3%81%99%E3%81%9B%E3%81%9D", 
-      "%E3%81%82%E3%82%80%E3%82%8D%E3%81%A8%E3%81%97%E3%82%87%E3%83%BC%E3%81%A7%E3%82%93", // shoden
+      "%E3%81%82%E3%82%80%E3%82%8D%E3%81%A8%E3%81%97%E3%82%87%E3%83%BC%E3%81%A7%E3%82%93", 
       "%E3%81%9F%E3%81%A1%E3%81%A4%E3%81%A6%E3%81%A8"  
     ];
 
     secretInput.addEventListener('input', (e) => {
       const val = e.target.value;
       const _0x1c = encodeURIComponent(val);
-      
-      if (_0x1c === _0x4a9b[4]) {
-        startChat('shoden');
-        e.target.value = '';
-      } else if (_0x1c === _0x4a9b[1]) {
-        startChat('juwaden');
-        e.target.value = '';
-      }
+      if (_0x1c === _0x4a9b[4]) { startChat('shoden'); e.target.value = ''; } 
+      else if (_0x1c === _0x4a9b[1]) { startChat('juwaden'); e.target.value = ''; }
     });
 
     function startChat(mode) {
-      currentMode = mode;
-      MY_NAME = mode;
-      
+      currentMode = mode; MY_NAME = mode;
       dummyScreen.style.display = 'none';
       chatApp.style.display = 'flex';
       chatApp.classList.add('chat-mode-' + mode);
       document.title = mode === 'shoden' ? 'しょーでん専用チャット' : 'ゆゆっぴ';
-
-      if (mode === 'shoden') {
-        header.style.display = 'flex';
-      } else {
-        header.style.display = 'none';
-      }
-
-      if (!isAppInitialized) {
-        initApp();
-        isAppInitialized = true;
-      }
+      header.style.display = mode === 'shoden' ? 'flex' : 'none';
+      if (!isAppInitialized) { initApp(); isAppInitialized = true; }
     }
 
-    // チャットのメインロジック
     function initApp() {
       initLockState();
-      
       supabaseClient.channel('public:settings')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'settings' }, payload => {
-          isLocked = payload.new.is_locked; 
-          applyLockState();
+          isLocked = payload.new.is_locked; applyLockState();
         }).subscribe();
 
       loadMessages();
@@ -167,10 +132,7 @@
 
     async function initLockState() {
       const { data } = await supabaseClient.from('settings').select('is_locked').eq('id', 1).single();
-      if (data) { 
-        isLocked = data.is_locked; 
-        applyLockState();
-      }
+      if (data) { isLocked = data.is_locked; applyLockState(); }
     }
 
     function applyLockState() {
@@ -197,10 +159,9 @@
 
       if (content) {
         const textSpan = document.createElement('span');
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        const parts = content.split(urlRegex);
+        const parts = content.split(/(https?:\/\/[^\s]+)/g);
         parts.forEach(part => {
-          if (part.match(urlRegex)) {
+          if (part.match(/(https?:\/\/[^\s]+)/g)) {
             const link = document.createElement('a'); link.href = part; link.target = '_blank'; link.textContent = part; textSpan.appendChild(link);
           } else { textSpan.appendChild(document.createTextNode(part)); }
         });
@@ -208,15 +169,12 @@
       }
 
       if (fileUrl) {
-        const br = document.createElement('br');
-        if (content) bubble.appendChild(br);
+        if (content) bubble.appendChild(document.createElement('br'));
         const type = fileType ? fileType.toLowerCase() : '';
         if (type.startsWith('image/')) {
           const img = document.createElement('img'); img.src = fileUrl; bubble.appendChild(img);
         } else if (type.startsWith('video/')) {
           const video = document.createElement('video'); video.src = fileUrl; video.controls = true; video.playsInline = true; bubble.appendChild(video);
-        } else if (type.startsWith('audio/')) {
-          const audio = document.createElement('audio'); audio.src = fileUrl; audio.controls = true; bubble.appendChild(audio);
         } else {
           const link = document.createElement('a'); link.href = fileUrl; link.target = '_blank'; link.textContent = '📁 ファイルを開く'; bubble.appendChild(link);
         }
@@ -224,52 +182,95 @@
 
       const deleteBtn = document.createElement('button');
       deleteBtn.classList.add('delete-btn'); deleteBtn.textContent = '🗑️';
-      deleteBtn.onclick = async () => {
-        if (confirm('削除する？')) await supabaseClient.rpc('delete_message', { msg_id: id });
-      };
+      deleteBtn.onclick = async () => { if (confirm('削除する？')) await supabaseClient.rpc('delete_message', { msg_id: id }); };
       
       if (sender === MY_NAME) { wrapper.appendChild(deleteBtn); wrapper.appendChild(bubble); }
       else { wrapper.appendChild(bubble); wrapper.appendChild(deleteBtn); }
       chatBox.appendChild(wrapper); chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    sendBtn.addEventListener('click', async () => {
-      const text = messageInput.value; const file = fileInput.files[0];
-      if (!text.trim() && !file) return;
-      sendBtn.disabled = true;
-
-      if (file) {
-        const fileExt = file.name.split('.').pop();
-        const randomStr = Math.random().toString(36).substring(2, 10);
-        const filePath = `${Date.now()}_${randomStr}.${fileExt}`;
-        const fileTypeTemp = file.type;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const arrayBuffer = e.target.result;
-          const { error: uploadError } = await supabaseClient.storage.from('chat_files').upload(filePath, arrayBuffer, {
-            contentType: fileTypeTemp
-          });
-          if (uploadError) { alert('ファイルエラー: ' + uploadError.message); sendBtn.disabled = false; return; }
-          const { data } = supabaseClient.storage.from('chat_files').getPublicUrl(filePath);
-          
-          const { error } = await supabaseClient.from('messages').insert([{ sender: MY_NAME, content: text, file_url: data.publicUrl, file_type: fileTypeTemp }]);
-          if (!error) { messageInput.value = ''; fileInput.value = ''; }
-          sendBtn.disabled = false;
-        };
-        reader.onerror = () => { alert('ファイルの読み込みに失敗💦'); sendBtn.disabled = false; };
-        reader.readAsArrayBuffer(file);
-      } else {
-        const { error } = await supabaseClient.from('messages').insert([{ sender: MY_NAME, content: text, file_url: null, file_type: null }]);
-        if (!error) { messageInput.value = ''; fileInput.value = ''; }
-        sendBtn.disabled = false;
-      }
-    });
-
     async function loadMessages() {
       const { data } = await supabaseClient.from('messages').select('*').order('created_at', { ascending: true });
       if (data) data.forEach(msg => appendMessage(msg.id, msg.sender, msg.content, msg.file_url, msg.file_type));
     }
+
+    // ファイル選択時にアイコンを水色にする
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) fileLabel.style.backgroundColor = '#a5d8ff';
+      else fileLabel.style.backgroundColor = '#f1f3f5';
+    });
+
+    // 新しい送信処理（詳細なエラー通知付き）
+    sendBtn.addEventListener('click', async () => {
+      const text = messageInput.value; 
+      const file = fileInput.files[0];
+      
+      if (!text.trim() && !file) {
+        alert('メッセージか画像を入力してね！');
+        return;
+      }
+      
+      sendBtn.disabled = true;
+      const originalBtnText = sendBtn.textContent;
+      sendBtn.textContent = '送信中...';
+
+      const resetBtn = () => {
+        sendBtn.disabled = false;
+        sendBtn.textContent = originalBtnText;
+      };
+
+      try {
+        if (file) {
+          const fileExt = file.name.split('.').pop() || 'jpg';
+          const randomStr = Math.random().toString(36).substring(2, 10);
+          const filePath = `${Date.now()}_${randomStr}.${fileExt}`;
+          const fileTypeTemp = file.type || 'image/jpeg';
+
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const arrayBuffer = e.target.result;
+            const { error: uploadError } = await supabaseClient.storage.from('chat_files').upload(filePath, arrayBuffer, {
+              contentType: fileTypeTemp
+            });
+            
+            if (uploadError) { 
+              alert('ストレージエラー💦: ' + uploadError.message); 
+              resetBtn(); return; 
+            }
+            
+            const { data } = supabaseClient.storage.from('chat_files').getPublicUrl(filePath);
+            
+            const { error: dbError } = await supabaseClient.from('messages').insert([{ 
+              sender: MY_NAME, content: text, file_url: data.publicUrl, file_type: fileTypeTemp 
+            }]);
+            
+            if (dbError) {
+              alert('DBエラー💦(列がないかも): ' + dbError.message);
+            } else {
+              messageInput.value = ''; fileInput.value = '';
+              fileLabel.style.backgroundColor = '#f1f3f5';
+            }
+            resetBtn();
+          };
+          reader.onerror = () => { alert('ファイルの読み込み失敗💦'); resetBtn(); };
+          reader.readAsArrayBuffer(file);
+        } else {
+          const { error: dbError } = await supabaseClient.from('messages').insert([{ 
+            sender: MY_NAME, content: text, file_url: null, file_type: null 
+          }]);
+          
+          if (dbError) {
+            alert('DBエラー💦: ' + dbError.message);
+          } else {
+            messageInput.value = ''; fileInput.value = '';
+          }
+          resetBtn();
+        }
+      } catch (err) {
+        alert('予期せぬエラー💦: ' + err.message);
+        resetBtn();
+      }
+    });
   </script>
 </body>
 </html>
