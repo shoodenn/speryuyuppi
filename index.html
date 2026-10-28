@@ -6,15 +6,48 @@
   <title>404 Not Found</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; height: 100vh; height: 100dvh; background-color: #fff; overflow: hidden; }
+    /* ------------------------------
+       全体・PC対応レイアウト
+    ------------------------------ */
+    body { 
+      margin: 0; padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+      background-color: #2c2c2c; /* PCで見た時の背景色（ダークグレー） */
+      display: flex; justify-content: center; align-items: center; 
+      height: 100vh; height: 100dvh; overflow: hidden; 
+    }
     
-    #dummy-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 50px 20px; box-sizing: border-box; text-align: center; z-index: 10; background-color: #fff; }
+    #dummy-screen, #chat-app { 
+      width: 100%; max-width: 480px; /* PCではスマホサイズ（480px）で固定 */
+      height: 100%; background-color: #fff; 
+      position: relative; overflow: hidden; 
+      box-shadow: 0 0 30px rgba(0,0,0,0.8); /* PCで見た時にアプリ枠を浮き上がらせる */
+    }
+
+    /* ------------------------------
+       ダミー画面用スタイル
+    ------------------------------ */
+    #dummy-screen { padding: 50px 20px; box-sizing: border-box; text-align: center; z-index: 10; display: block; }
     #dummy-screen h1 { font-size: 24px; margin-bottom: 10px; color: #000; }
     #dummy-screen p { font-size: 14px; color: #666; }
     #secret-input { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; border: none; background: transparent; color: transparent; outline: none; caret-color: transparent; }
 
-    #chat-app { display: none; flex-direction: column; height: 100%; background-color: #f7f9fc; position: relative; z-index: 20; }
-    #lock-screen-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #fff; z-index: 9999; justify-content: center; align-items: center; font-size: 24px; color: #555; font-weight: bold; }
+    /* ------------------------------
+       チャット画面・ロック画面用スタイル
+    ------------------------------ */
+    #chat-app { display: none; flex-direction: column; background-color: #f7f9fc; z-index: 20; }
+    
+    #lock-screen-overlay { 
+      display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      background-color: #fff; z-index: 9999; justify-content: center; align-items: center; 
+      font-size: 24px; color: #555; font-weight: bold; flex-direction: column; 
+    }
+    #request-unlock-btn {
+      margin-top: 25px; padding: 12px 24px; font-size: 16px; border-radius: 25px; border: none; 
+      background-color: #f06595; color: white; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      transition: 0.2s;
+    }
+    #request-unlock-btn:active { transform: scale(0.95); }
     
     #header { display: none; justify-content: space-between; align-items: center; padding: max(12px, env(safe-area-inset-top)) 15px 12px; background-color: #fff; border-bottom: 1px solid #ddd; font-weight: bold; }
     #lock-btn { padding: 6px 12px; border: none; border-radius: 15px; cursor: pointer; font-size: 14px; background-color: #f1f3f5; transition: 0.2s; }
@@ -44,16 +77,24 @@
   </style>
 </head>
 <body>
+  <!-- ダミー画面 -->
   <div id="dummy-screen">
     <h1>404 Not Found</h1>
     <p>The requested URL was not found on this server.</p>
     <input type="text" id="secret-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
   </div>
 
+  <!-- チャットアプリ本体 -->
   <div id="chat-app">
-    <div id="lock-screen-overlay">今は使えないよ💦</div>
+    <div id="lock-screen-overlay">
+      <div style="text-align: center;">
+        <div>今は使えないよ💦</div>
+        <button id="request-unlock-btn">🔓 ロック解除を申請する</button>
+      </div>
+    </div>
+    
     <div id="header">
-      <span>俺</span>
+      <span>👑 しょーでん専用</span>
       <button id="lock-btn">🔓 ロックしてない</button>
     </div>
     <div id="chat-box"></div>
@@ -78,6 +119,7 @@
     const secretInput = document.getElementById('secret-input');
     const chatApp = document.getElementById('chat-app');
     const lockScreenOverlay = document.getElementById('lock-screen-overlay');
+    const requestUnlockBtn = document.getElementById('request-unlock-btn');
     const header = document.getElementById('header');
     const lockBtn = document.getElementById('lock-btn');
     const chatBox = document.getElementById('chat-box');
@@ -128,6 +170,8 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
           const bubble = document.getElementById(`msg-${payload.old.id}`); if (bubble) bubble.remove();
         }).subscribe();
+        
+      resetAutoLockTimer(); // オートロックタイマー始動
     }
 
     async function initLockState() {
@@ -145,11 +189,77 @@
       }
     }
 
+    // ----------------------------------------------------
+    // 【新機能】ロック解除申請機能
+    // ----------------------------------------------------
+    requestUnlockBtn.addEventListener('click', async () => {
+      requestUnlockBtn.disabled = true;
+      const originalText = requestUnlockBtn.textContent;
+      requestUnlockBtn.textContent = '申請中...';
+      
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const text = `ロック解除の申請 ${timeStr}`;
+      
+      const { error } = await supabaseClient.from('messages').insert([{ 
+        sender: MY_NAME, content: text, file_url: null, file_type: null 
+      }]);
+      
+      if (!error) {
+        requestUnlockBtn.textContent = '申請を送信したよ！';
+        setTimeout(() => {
+          requestUnlockBtn.disabled = false;
+          requestUnlockBtn.textContent = originalText;
+        }, 60000); // 1分間は連打防止
+      } else {
+        alert('エラー💦: ' + error.message);
+        requestUnlockBtn.disabled = false;
+        requestUnlockBtn.textContent = originalText;
+      }
+    });
+
+    // ----------------------------------------------------
+    // 【新機能】オートロック機能（15:00〜03:00）
+    // ----------------------------------------------------
+    let autoLockTimer;
+    
+    // DBをロック状態に変更する実行部（しょーでんの端末からのみ指示を出す）
+    function enforceAutoLock() {
+      if (MY_NAME === 'shoden' && !isLocked) {
+        supabaseClient.rpc('toggle_lock', { new_state: true });
+      }
+    }
+
+    // 15時になった瞬間に自動ロックするチェッカー
+    setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 15 && now.getMinutes() === 0 && now.getSeconds() < 10) {
+        enforceAutoLock();
+      }
+    }, 10000);
+
+    // 放置オートロック（対象時間内に5分間操作がなければ再ロック）
+    function resetAutoLockTimer() {
+      clearTimeout(autoLockTimer);
+      const h = new Date().getHours();
+      // 15時から深夜3時（15,16...23,0,1,2）の間のみタイマーを作動
+      if (h >= 15 || h < 3) {
+        autoLockTimer = setTimeout(enforceAutoLock, 5 * 60 * 1000); // 5分無操作でロック
+      }
+    }
+    
+    document.addEventListener('click', resetAutoLockTimer);
+    document.addEventListener('input', resetAutoLockTimer);
+    document.addEventListener('touchstart', resetAutoLockTimer);
+
+    // ロック切り替えボタン
     lockBtn.addEventListener('click', async () => {
       const { error } = await supabaseClient.rpc('toggle_lock', { new_state: !isLocked });
       if (error) alert('ロック変更エラー💦: ' + error.message);
+      resetAutoLockTimer(); // 手動操作後もタイマーをリセット
     });
 
+    // メッセージ描画
     function appendMessage(id, sender, content, fileUrl, fileType) {
       const wrapper = document.createElement('div');
       wrapper.classList.add('message-wrapper', sender === MY_NAME ? 'my-wrapper' : 'their-wrapper');
@@ -194,30 +304,21 @@
       if (data) data.forEach(msg => appendMessage(msg.id, msg.sender, msg.content, msg.file_url, msg.file_type));
     }
 
-    // ファイル選択時にアイコンを水色にする
     fileInput.addEventListener('change', () => {
       if (fileInput.files.length > 0) fileLabel.style.backgroundColor = '#a5d8ff';
       else fileLabel.style.backgroundColor = '#f1f3f5';
     });
 
-    // 新しい送信処理（詳細なエラー通知付き）
     sendBtn.addEventListener('click', async () => {
       const text = messageInput.value; 
       const file = fileInput.files[0];
       
-      if (!text.trim() && !file) {
-        alert('メッセージか画像を入力してね！');
-        return;
-      }
+      if (!text.trim() && !file) return;
       
       sendBtn.disabled = true;
       const originalBtnText = sendBtn.textContent;
       sendBtn.textContent = '送信中...';
-
-      const resetBtn = () => {
-        sendBtn.disabled = false;
-        sendBtn.textContent = originalBtnText;
-      };
+      const resetBtn = () => { sendBtn.disabled = false; sendBtn.textContent = originalBtnText; };
 
       try {
         if (file) {
@@ -232,24 +333,15 @@
             const { error: uploadError } = await supabaseClient.storage.from('chat_files').upload(filePath, arrayBuffer, {
               contentType: fileTypeTemp
             });
-            
-            if (uploadError) { 
-              alert('ストレージエラー💦: ' + uploadError.message); 
-              resetBtn(); return; 
-            }
+            if (uploadError) { alert('ストレージエラー💦: ' + uploadError.message); resetBtn(); return; }
             
             const { data } = supabaseClient.storage.from('chat_files').getPublicUrl(filePath);
-            
             const { error: dbError } = await supabaseClient.from('messages').insert([{ 
               sender: MY_NAME, content: text, file_url: data.publicUrl, file_type: fileTypeTemp 
             }]);
             
-            if (dbError) {
-              alert('DBエラー💦(列がないかも): ' + dbError.message);
-            } else {
-              messageInput.value = ''; fileInput.value = '';
-              fileLabel.style.backgroundColor = '#f1f3f5';
-            }
+            if (!dbError) { messageInput.value = ''; fileInput.value = ''; fileLabel.style.backgroundColor = '#f1f3f5'; }
+            else { alert('DBエラー💦: ' + dbError.message); }
             resetBtn();
           };
           reader.onerror = () => { alert('ファイルの読み込み失敗💦'); resetBtn(); };
@@ -258,18 +350,11 @@
           const { error: dbError } = await supabaseClient.from('messages').insert([{ 
             sender: MY_NAME, content: text, file_url: null, file_type: null 
           }]);
-          
-          if (dbError) {
-            alert('DBエラー💦: ' + dbError.message);
-          } else {
-            messageInput.value = ''; fileInput.value = '';
-          }
+          if (!dbError) { messageInput.value = ''; fileInput.value = ''; }
+          else { alert('DBエラー💦: ' + dbError.message); }
           resetBtn();
         }
-      } catch (err) {
-        alert('予期せぬエラー💦: ' + err.message);
-        resetBtn();
-      }
+      } catch (err) { alert('予期せぬエラー💦: ' + err.message); resetBtn(); }
     });
   </script>
 </body>
