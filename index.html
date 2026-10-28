@@ -6,35 +6,26 @@
   <title>404 Not Found</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    /* ------------------------------
-       全体・PC対応レイアウト
-    ------------------------------ */
     body { 
       margin: 0; padding: 0; 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-      background-color: #2c2c2c; /* PCで見た時の背景色（ダークグレー） */
+      background-color: #2c2c2c; 
       display: flex; justify-content: center; align-items: center; 
       height: 100vh; height: 100dvh; overflow: hidden; 
     }
     
     #dummy-screen, #chat-app { 
-      width: 100%; max-width: 480px; /* PCではスマホサイズ（480px）で固定 */
+      width: 100%; max-width: 480px; 
       height: 100%; background-color: #fff; 
       position: relative; overflow: hidden; 
-      box-shadow: 0 0 30px rgba(0,0,0,0.8); /* PCで見た時にアプリ枠を浮き上がらせる */
+      box-shadow: 0 0 30px rgba(0,0,0,0.8); 
     }
 
-    /* ------------------------------
-       ダミー画面用スタイル
-    ------------------------------ */
     #dummy-screen { padding: 50px 20px; box-sizing: border-box; text-align: center; z-index: 10; display: block; }
     #dummy-screen h1 { font-size: 24px; margin-bottom: 10px; color: #000; }
     #dummy-screen p { font-size: 14px; color: #666; }
     #secret-input { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; border: none; background: transparent; color: transparent; outline: none; caret-color: transparent; }
 
-    /* ------------------------------
-       チャット画面・ロック画面用スタイル
-    ------------------------------ */
     #chat-app { display: none; flex-direction: column; background-color: #f7f9fc; z-index: 20; }
     
     #lock-screen-overlay { 
@@ -77,14 +68,12 @@
   </style>
 </head>
 <body>
-  <!-- ダミー画面 -->
   <div id="dummy-screen">
     <h1>404 Not Found</h1>
     <p>The requested URL was not found on this server.</p>
     <input type="text" id="secret-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
   </div>
 
-  <!-- チャットアプリ本体 -->
   <div id="chat-app">
     <div id="lock-screen-overlay">
       <div style="text-align: center;">
@@ -94,7 +83,7 @@
     </div>
     
     <div id="header">
-      <span>👑 しょーでん専用</span>
+      <span>俺</span>
       <button id="lock-btn">🔓 ロックしてない</button>
     </div>
     <div id="chat-box"></div>
@@ -128,7 +117,6 @@
     const sendBtn = document.getElementById('send-btn');
     const fileLabel = document.getElementById('file-label');
 
-    // 認証
     const _0x4a9b = [
       "%E3%81%82%E3%81%84%E3%81%86%E3%81%88%E3%81%8A", 
       "%E3%81%82%E3%82%80%E3%82%8D%E3%81%A8%E3%82%8B%E3%81%86%E3%81%8F%E3%81%A8%E3%81%B5%E3%82%8B%E3%81%B1%E3%82%8F%E3%83%BC%E3%82%8A%E3%81%A3%E3%81%8F", 
@@ -150,9 +138,11 @@
       dummyScreen.style.display = 'none';
       chatApp.style.display = 'flex';
       chatApp.classList.add('chat-mode-' + mode);
-      document.title = mode === 'shoden' ? 'しょーでん専用チャット' : 'ゆゆっぴ';
+      document.title = mode === 'shoden' ? '俺' : 'ゆゆっぴ';
       header.style.display = mode === 'shoden' ? 'flex' : 'none';
       if (!isAppInitialized) { initApp(); isAppInitialized = true; }
+      
+      resetActivityTimers();
     }
 
     function initApp() {
@@ -170,8 +160,6 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
           const bubble = document.getElementById(`msg-${payload.old.id}`); if (bubble) bubble.remove();
         }).subscribe();
-        
-      resetAutoLockTimer(); // オートロックタイマー始動
     }
 
     async function initLockState() {
@@ -189,9 +177,6 @@
       }
     }
 
-    // ----------------------------------------------------
-    // 【新機能】ロック解除申請機能
-    // ----------------------------------------------------
     requestUnlockBtn.addEventListener('click', async () => {
       requestUnlockBtn.disabled = true;
       const originalText = requestUnlockBtn.textContent;
@@ -207,30 +192,22 @@
       
       if (!error) {
         requestUnlockBtn.textContent = '申請を送信したよ！';
-        setTimeout(() => {
-          requestUnlockBtn.disabled = false;
-          requestUnlockBtn.textContent = originalText;
-        }, 60000); // 1分間は連打防止
+        setTimeout(() => { requestUnlockBtn.disabled = false; requestUnlockBtn.textContent = originalText; }, 60000);
       } else {
         alert('エラー💦: ' + error.message);
-        requestUnlockBtn.disabled = false;
-        requestUnlockBtn.textContent = originalText;
+        requestUnlockBtn.disabled = false; requestUnlockBtn.textContent = originalText;
       }
     });
 
-    // ----------------------------------------------------
-    // 【新機能】オートロック機能（15:00〜03:00）
-    // ----------------------------------------------------
     let autoLockTimer;
+    let dummyRedirectTimer;
     
-    // DBをロック状態に変更する実行部（しょーでんの端末からのみ指示を出す）
     function enforceAutoLock() {
       if (MY_NAME === 'shoden' && !isLocked) {
         supabaseClient.rpc('toggle_lock', { new_state: true });
       }
     }
 
-    // 15時になった瞬間に自動ロックするチェッカー
     setInterval(() => {
       const now = new Date();
       if (now.getHours() === 15 && now.getMinutes() === 0 && now.getSeconds() < 10) {
@@ -238,28 +215,33 @@
       }
     }, 10000);
 
-    // 放置オートロック（対象時間内に5分間操作がなければ再ロック）
-    function resetAutoLockTimer() {
+    function resetActivityTimers() {
+      if (!isAppInitialized) return;
+
       clearTimeout(autoLockTimer);
       const h = new Date().getHours();
-      // 15時から深夜3時（15,16...23,0,1,2）の間のみタイマーを作動
       if (h >= 15 || h < 3) {
-        autoLockTimer = setTimeout(enforceAutoLock, 5 * 60 * 1000); // 5分無操作でロック
+        autoLockTimer = setTimeout(enforceAutoLock, 5 * 60 * 1000); 
       }
+
+      clearTimeout(dummyRedirectTimer);
+      dummyRedirectTimer = setTimeout(() => {
+        window.location.reload(); 
+      }, 10 * 60 * 1000); 
     }
     
-    document.addEventListener('click', resetAutoLockTimer);
-    document.addEventListener('input', resetAutoLockTimer);
-    document.addEventListener('touchstart', resetAutoLockTimer);
+    document.addEventListener('click', resetActivityTimers);
+    document.addEventListener('input', resetActivityTimers);
+    document.addEventListener('touchstart', resetActivityTimers);
+    document.addEventListener('mousemove', resetActivityTimers);
+    document.addEventListener('scroll', resetActivityTimers);
 
-    // ロック切り替えボタン
     lockBtn.addEventListener('click', async () => {
       const { error } = await supabaseClient.rpc('toggle_lock', { new_state: !isLocked });
       if (error) alert('ロック変更エラー💦: ' + error.message);
-      resetAutoLockTimer(); // 手動操作後もタイマーをリセット
+      resetActivityTimers();
     });
 
-    // メッセージ描画
     function appendMessage(id, sender, content, fileUrl, fileType) {
       const wrapper = document.createElement('div');
       wrapper.classList.add('message-wrapper', sender === MY_NAME ? 'my-wrapper' : 'their-wrapper');
