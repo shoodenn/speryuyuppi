@@ -24,7 +24,9 @@
     #dummy-screen { padding: 50px 20px; box-sizing: border-box; text-align: center; z-index: 10; display: block; }
     #dummy-screen h1 { font-size: 24px; margin-bottom: 10px; color: #000; }
     #dummy-screen p { font-size: 14px; color: #666; }
-    #secret-input { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; border: none; background: transparent; color: transparent; outline: none; caret-color: transparent; }
+    
+    /* 入力欄（透明のまま、コピペしやすいように高さを持たせる） */
+    #secret-input { position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; border: none; background: transparent; color: transparent; outline: none; caret-color: transparent; font-size: 16px; }
 
     #chat-app { display: none; flex-direction: column; background-color: #f7f9fc; z-index: 20; }
     
@@ -126,11 +128,17 @@
       "%E3%81%9F%E3%81%A1%E3%81%A4%E3%81%A6%E3%81%A8"  
     ];
 
+    // コピペした時のための改善
     secretInput.addEventListener('input', (e) => {
-      const val = e.target.value;
+      // .trim() で前後の空白や改行を消し飛ばしてからチェックする
+      const val = e.target.value.trim(); 
       const _0x1c = encodeURIComponent(val);
-      if (_0x1c === _0x4a9b[4]) { startChat('shoden'); e.target.value = ''; } 
-      else if (_0x1c === _0x4a9b[1]) { startChat('juwaden'); e.target.value = ''; }
+      
+      if (_0x1c === _0x4a9b[4]) { 
+        startChat('shoden'); e.target.value = ''; 
+      } else if (_0x1c === _0x4a9b[1]) { 
+        startChat('juwaden'); e.target.value = ''; 
+      }
     });
 
     function startChat(mode) {
