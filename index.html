@@ -25,20 +25,16 @@
     #dummy-screen h1 { font-size: 24px; margin-bottom: 10px; color: #000; }
     #dummy-screen p { font-size: 14px; color: #666; }
     
-    /* ------------------------------
-       パスワード入力欄（改善版）
-    ------------------------------ */
     #secret-input { 
       position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; 
       border: none; background: transparent; color: transparent; outline: none; 
       caret-color: transparent; font-size: 16px; text-align: center; transition: 0.3s; 
     }
-    /* タップして入力中になった時だけ、うっすらと見えるようにする */
     #secret-input:focus {
-      color: #aaa; /* 文字を薄いグレーで表示 */
-      caret-color: #aaa; /* カーソルも表示 */
-      background-color: #fafafa; /* 入力エリアの背景をわずかに変える */
-      border-top: 1px dashed #eee; /* 上に薄い点線を出して枠をわかりやすく */
+      color: #aaa; 
+      caret-color: #aaa; 
+      background-color: #fafafa; 
+      border-top: 1px dashed #eee; 
     }
 
     #chat-app { display: none; flex-direction: column; background-color: #f7f9fc; z-index: 20; }
@@ -98,7 +94,10 @@
     </div>
     
     <div id="header">
-      <span>俺</span>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span>俺</span>
+        <span id="online-status" style="font-size: 11px; padding: 3px 8px; border-radius: 12px; background-color: #adb5bd; color: white; display: none; font-weight: normal;">⚪️ オフライン</span>
+      </div>
       <button id="lock-btn">🔓 ロックしてない</button>
     </div>
     <div id="chat-box"></div>
@@ -118,6 +117,7 @@
     let currentMode = '';
     let isLocked = false;
     let isAppInitialized = false;
+    let presenceChannel;
 
     const dummyScreen = document.getElementById('dummy-screen');
     const secretInput = document.getElementById('secret-input');
@@ -131,6 +131,7 @@
     const fileInput = document.getElementById('file-input');
     const sendBtn = document.getElementById('send-btn');
     const fileLabel = document.getElementById('file-label');
+    const onlineStatus = document.getElementById('online-status');
 
     const _0x4a9b = [
       "%E3%81%82%E3%81%84%E3%81%86%E3%81%88%E3%81%8A", 
@@ -159,7 +160,16 @@
       chatApp.classList.add('chat-mode-' + mode);
       document.title = mode === 'shoden' ? '俺' : 'ゆゆっぴ';
       header.style.display = mode === 'shoden' ? 'flex' : 'none';
-      if (!isAppInitialized) { initApp(); isAppInitialized = true; }
+      
+      if (mode === 'shoden') {
+        onlineStatus.style.display = 'inline-block';
+      }
+
+      if (!isAppInitialized) { 
+        initApp(); 
+        setupPresence(); 
+        isAppInitialized = true; 
+      }
       
       resetActivityTimers();
     }
@@ -179,6 +189,40 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
           const bubble = document.getElementById(`msg-${payload.old.id}`); if (bubble) bubble.remove();
         }).subscribe();
+    }
+    
+    // ⭐️ 相手がオンラインかチェックする機能を追加！
+    function setupPresence() {
+      presenceChannel = supabaseClient.channel('online-users');
+      
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = presenceChannel.presenceState();
+          let isJuwadenOnline = false;
+          
+          for (const key in newState) {
+            newState[key].forEach(p => {
+              if (p.user_name === 'juwaden') isJuwadenOnline = true;
+            });
+          }
+          
+          // 俺の画面にだけステータスを反映させるよ
+          if (MY_NAME === 'shoden') {
+            if (isJuwadenOnline) {
+              onlineStatus.textContent = '🟢 オンライン';
+              onlineStatus.style.backgroundColor = '#40c057';
+            } else {
+              onlineStatus.textContent = '⚪️ オフライン';
+              onlineStatus.style.backgroundColor = '#adb5bd';
+            }
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            // 自分がオンラインになったことをみんなにお知らせ
+            await presenceChannel.track({ user_name: MY_NAME });
+          }
+        });
     }
 
     async function initLockState() {
