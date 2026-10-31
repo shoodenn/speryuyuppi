@@ -68,6 +68,7 @@
     .chat-mode-shoden .their-message { background-color: #fce4ec; border-bottom-left-radius: 3px; color: #333; }
     .chat-mode-juwaden .my-message { background-color: #fce4ec; border-bottom-right-radius: 3px; color: #333; }
     .chat-mode-juwaden .their-message { background-color: #d0ebff; border-bottom-left-radius: 3px; color: #333; }
+    .system-message { background-color: #e9ecef; border-bottom-right-radius: 3px; color: #495057; font-size: 13px; font-weight: bold; border: 1px dashed #ced4da; }
     
     #input-area { display: flex; align-items: flex-end; padding: 10px 10px max(10px, env(safe-area-inset-bottom)); background-color: #fff; border-top: 1px solid #ddd; gap: 8px; }
     #file-label { background-color: #f1f3f5; padding: 10px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; transition: background-color 0.2s; }
@@ -187,11 +188,10 @@
           appendMessage(payload.new.id, payload.new.sender, payload.new.content, payload.new.file_url, payload.new.file_type);
         })
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
-          const bubble = document.getElementById(`msg-${payload.old.id}`); if (bubble) bubble.remove();
+          const bubble = document.getElementById(`msg-${payload.new.id}` || `msg-${payload.old.id}`); if (bubble) bubble.remove();
         }).subscribe();
     }
     
-    // ⭐️ 相手がオンラインかチェックする機能を追加！
     function setupPresence() {
       presenceChannel = supabaseClient.channel('online-users');
       
@@ -206,7 +206,6 @@
             });
           }
           
-          // 俺の画面にだけステータスを反映させるよ
           if (MY_NAME === 'shoden') {
             if (isJuwadenOnline) {
               onlineStatus.textContent = '🟢 オンライン';
@@ -219,8 +218,18 @@
         })
         .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
-            // 自分がオンラインになったことをみんなにお知らせ
             await presenceChannel.track({ user_name: MY_NAME });
+            
+            // 相手(juwaden)がオンラインになった瞬間に、俺(shoden)向けに履歴を残す
+            if (MY_NAME === 'juwaden') {
+              const now = new Date();
+              const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+              const historyText = `🟢 相手がオンラインになりました (${timeStr})`;
+              
+              await supabaseClient.from('messages').insert([{ 
+                sender: 'system_online_history', content: historyText, file_url: null, file_type: null 
+              }]);
+            }
           }
         });
     }
@@ -306,11 +315,22 @@
     });
 
     function appendMessage(id, sender, content, fileUrl, fileType) {
+      // 履歴メッセージは俺(shoden)の画面にだけ表示する！
+      if (sender === 'system_online_history' && MY_NAME !== 'shoden') return;
+
       const wrapper = document.createElement('div');
-      wrapper.classList.add('message-wrapper', sender === MY_NAME ? 'my-wrapper' : 'their-wrapper');
+      
+      // 俺自身からのメッセージ、もしくはシステム履歴の場合は右側に表示
+      const isOwnOrSystem = (sender === MY_NAME || sender === 'system_online_history');
+      wrapper.classList.add('message-wrapper', isOwnOrSystem ? 'my-wrapper' : 'their-wrapper');
       wrapper.id = `msg-${id}`;
+      
       const bubble = document.createElement('div');
-      bubble.classList.add('bubble', sender === MY_NAME ? 'my-message' : 'their-message');
+      let bubbleClass = 'their-message';
+      if (sender === MY_NAME) bubbleClass = 'my-message';
+      else if (sender === 'system_online_history') bubbleClass = 'system-message';
+      
+      bubble.classList.add('bubble', bubbleClass);
 
       if (content) {
         const textSpan = document.createElement('span');
@@ -339,8 +359,12 @@
       deleteBtn.classList.add('delete-btn'); deleteBtn.textContent = '🗑️';
       deleteBtn.onclick = async () => { if (confirm('削除する？')) await supabaseClient.rpc('delete_message', { msg_id: id }); };
       
-      if (sender === MY_NAME) { wrapper.appendChild(deleteBtn); wrapper.appendChild(bubble); }
-      else { wrapper.appendChild(bubble); wrapper.appendChild(deleteBtn); }
+      // 削除ボタンは右側メッセージなら左に置く
+      if (isOwnOrSystem) { 
+        wrapper.appendChild(deleteBtn); wrapper.appendChild(bubble); 
+      } else { 
+        wrapper.appendChild(bubble); wrapper.appendChild(deleteBtn); 
+      }
       chatBox.appendChild(wrapper); chatBox.scrollTop = chatBox.scrollHeight;
     }
 
