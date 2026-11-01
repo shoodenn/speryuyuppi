@@ -77,6 +77,8 @@
 
     #call-start-btn { background-color: #eebefa; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 18px; flex-shrink: 0; }
     #call-end-btn { display: none; background-color: #ff8787; border: none; border-radius: 50%; color: white; width: 40px; height: 40px; justify-content: center; align-items: center; cursor: pointer; font-size: 11px; font-weight: bold; flex-shrink: 0; }
+
+    #incoming-call-modal { display: none; position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: #fff; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 10000; text-align: center; width: 80%; max-width: 300px; border: 2px solid #eebefa; }
   </style>
 </head>
 <body>
@@ -87,6 +89,18 @@
   </div>
 
   <div id="chat-app">
+    <!-- スマホでの音声再生ブロックを回避するため、最初から非表示で配置しておく -->
+    <audio id="remote-audio" autoplay playsinline style="display:none;"></audio>
+
+    <!-- 専用の着信ポップアップ -->
+    <div id="incoming-call-modal">
+      <div style="font-weight:bold; margin-bottom:15px; color:#333;">📞 通話がかかってきたよ！</div>
+      <div style="display:flex; justify-content:space-around;">
+        <button id="answer-btn" style="background:#40c057; color:white; border:none; padding:10px 25px; border-radius:20px; font-weight:bold; cursor:pointer;">出る</button>
+        <button id="decline-btn" style="background:#ff8787; color:white; border:none; padding:10px 25px; border-radius:20px; font-weight:bold; cursor:pointer;">拒否</button>
+      </div>
+    </div>
+
     <div id="lock-screen-overlay">
       <div style="text-align: center;">
         <div>今は使えないよ💦</div>
@@ -168,7 +182,6 @@
         onlineStatus.style.display = 'inline-block';
       }
 
-      // 通知機能対応ブラウザのみ権限リクエストを行う（エラー回避）
       if ('Notification' in window) {
         if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
           Notification.requestPermission();
@@ -196,7 +209,6 @@
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
           appendMessage(payload.new.id, payload.new.sender, payload.new.content, payload.new.file_url, payload.new.file_type);
           
-          // 通知機能対応ブラウザのみプッシュ通知を出す（エラー回避）
           if (payload.new.sender !== MY_NAME && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
             new Notification('新着メッセージ✨', { body: payload.new.content || 'ファイルが届いたよ！' });
           }
@@ -241,6 +253,8 @@
     let localStream;
     let peerConnection;
     let rtcChannel;
+    let iceCandidateQueue = [];
+    let incomingOffer = null;
 
     function setupWebRTC() {
       rtcChannel = supabaseClient.channel('webrtc-signaling');
@@ -249,29 +263,43 @@
         if (sender === MY_NAME) return;
 
         if (type === 'offer') {
-          if (confirm('通話がかかってきたよ！📞 出る？')) {
-            await startWebRTC(false);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'answer', data: answer, sender: MY_NAME } });
-            
-            document.getElementById('call-start-btn').style.display = 'none';
-            document.getElementById('call-end-btn').style.display = 'flex';
-          }
+          incomingOffer = data;
+          document.getElementById('incoming-call-modal').style.display = 'block';
         } else if (type === 'answer' && peerConnection) {
           await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
-        } else if (type === 'candidate' && peerConnection) {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(data));
-        } else if (type === 'hangup') {
+          processIceQueue();
+        } else if (type === 'candidate') {
+          if (peerConnection && peerConnection.remoteDescription) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => console.log('ICE Error:', e));
+          } else {
+            // 接続準備ができるまで順番待ちさせる
+            iceCandidateQueue.push(data);
+          }
+        } else if (type === 'hangup' || type === 'decline') {
           cleanupWebRTC();
-          alert('通話が終わったよー👋');
+          document.getElementById('incoming-call-modal').style.display = 'none';
+          if (type === 'hangup') alert('通話が終わったよー👋');
+          if (type === 'decline') alert('通話が拒否されたよ💦');
         }
       }).subscribe();
     }
 
+    function processIceQueue() {
+      iceCandidateQueue.forEach(async (c) => {
+        try { await peerConnection.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+      });
+      iceCandidateQueue = [];
+    }
+
     async function startWebRTC(isCaller = true) {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        alert('マイクが使えないよ💦 ブラウザの設定でマイクを許可してね！');
+        cleanupWebRTC();
+        return;
+      }
+      
       peerConnection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
@@ -282,14 +310,10 @@
       };
 
       peerConnection.ontrack = (event) => {
-        let remoteAudio = document.getElementById('remote-audio');
-        if (!remoteAudio) {
-          remoteAudio = document.createElement('audio');
-          remoteAudio.id = 'remote-audio';
-          remoteAudio.autoplay = true;
-          document.body.appendChild(remoteAudio);
-        }
+        const remoteAudio = document.getElementById('remote-audio');
         remoteAudio.srcObject = event.streams[0];
+        // ユーザーがボタンを押した直後なのでplayが許可されやすい
+        remoteAudio.play().catch(e => console.log('音声再生ブロック:', e));
       };
 
       if (isCaller) {
@@ -303,20 +327,52 @@
       if (peerConnection) { peerConnection.close(); peerConnection = null; }
       if (localStream) { localStream.getTracks().forEach(track => track.stop()); localStream = null; }
       const remoteAudio = document.getElementById('remote-audio');
-      if (remoteAudio) remoteAudio.remove();
+      if (remoteAudio) { remoteAudio.srcObject = null; }
+      iceCandidateQueue = [];
+      incomingOffer = null;
       document.getElementById('call-start-btn').style.display = 'flex';
       document.getElementById('call-end-btn').style.display = 'none';
     }
 
+    // 「📞」ボタンを押して発信
     document.getElementById('call-start-btn').addEventListener('click', async () => {
       document.getElementById('call-start-btn').style.display = 'none';
       document.getElementById('call-end-btn').style.display = 'flex';
+      
+      // スマホブロック対策: 音声タグをアクティブにする
+      document.getElementById('remote-audio').play().catch(()=>{});
       await startWebRTC(true);
     });
 
+    // 「切断」ボタン
     document.getElementById('call-end-btn').addEventListener('click', () => {
       rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'hangup', sender: MY_NAME } });
       cleanupWebRTC();
+    });
+
+    // 「出る」ボタン（着信ポップアップ）
+    document.getElementById('answer-btn').addEventListener('click', async () => {
+      document.getElementById('incoming-call-modal').style.display = 'none';
+      document.getElementById('call-start-btn').style.display = 'none';
+      document.getElementById('call-end-btn').style.display = 'flex';
+      
+      // スマホブロック対策: ユーザーがタップした瞬間に再生をアクティブにする
+      document.getElementById('remote-audio').play().catch(()=>{});
+
+      await startWebRTC(false);
+      if (incomingOffer) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'answer', data: answer, sender: MY_NAME } });
+        processIceQueue();
+      }
+    });
+
+    // 「拒否」ボタン（着信ポップアップ）
+    document.getElementById('decline-btn').addEventListener('click', () => {
+      document.getElementById('incoming-call-modal').style.display = 'none';
+      rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'decline', sender: MY_NAME } });
     });
     // ----------------------------------
 
@@ -408,7 +464,6 @@
 
       if (content) {
         const textSpan = document.createElement('span');
-        // contentがnull等の場合も安全に処理
         const parts = String(content).split(/(https?:\/\/[^\s]+)/g);
         parts.forEach(part => {
           if (part.match(/(https?:\/\/[^\s]+)/g)) {
