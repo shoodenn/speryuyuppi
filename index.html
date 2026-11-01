@@ -89,10 +89,11 @@
   </div>
 
   <div id="chat-app">
-    <!-- スマホでの音声再生ブロックを回避するため、最初から非表示で配置しておく -->
+    <!-- 通話音声用 -->
     <audio id="remote-audio" autoplay playsinline style="display:none;"></audio>
+    <!-- 着信音（ループ再生用） -->
+    <audio id="ringtone-audio" loop src="https://actions.google.com/sounds/v1/alarms/phone_ringing.ogg" style="display:none;"></audio>
 
-    <!-- 専用の着信ポップアップ -->
     <div id="incoming-call-modal">
       <div style="font-weight:bold; margin-bottom:15px; color:#333;">📞 通話がかかってきたよ！</div>
       <div style="display:flex; justify-content:space-around;">
@@ -256,6 +257,13 @@
     let iceCandidateQueue = [];
     let incomingOffer = null;
 
+    function stopRingtone() {
+      const ringtone = document.getElementById('ringtone-audio');
+      ringtone.pause();
+      ringtone.currentTime = 0;
+      if (navigator.vibrate) navigator.vibrate(0);
+    }
+
     function setupWebRTC() {
       rtcChannel = supabaseClient.channel('webrtc-signaling');
       rtcChannel.on('broadcast', { event: 'signal' }, async (payload) => {
@@ -265,6 +273,11 @@
         if (type === 'offer') {
           incomingOffer = data;
           document.getElementById('incoming-call-modal').style.display = 'block';
+          
+          // 着信音の再生とバイブ（Android用）
+          document.getElementById('ringtone-audio').play().catch(()=>{});
+          if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 1000]);
+
         } else if (type === 'answer' && peerConnection) {
           await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
           processIceQueue();
@@ -272,10 +285,10 @@
           if (peerConnection && peerConnection.remoteDescription) {
             await peerConnection.addIceCandidate(new RTCIceCandidate(data)).catch(e => console.log('ICE Error:', e));
           } else {
-            // 接続準備ができるまで順番待ちさせる
             iceCandidateQueue.push(data);
           }
         } else if (type === 'hangup' || type === 'decline') {
+          stopRingtone();
           cleanupWebRTC();
           document.getElementById('incoming-call-modal').style.display = 'none';
           if (type === 'hangup') alert('通話が終わったよー👋');
@@ -312,7 +325,6 @@
       peerConnection.ontrack = (event) => {
         const remoteAudio = document.getElementById('remote-audio');
         remoteAudio.srcObject = event.streams[0];
-        // ユーザーがボタンを押した直後なのでplayが許可されやすい
         remoteAudio.play().catch(e => console.log('音声再生ブロック:', e));
       };
 
@@ -334,12 +346,10 @@
       document.getElementById('call-end-btn').style.display = 'none';
     }
 
-    // 「📞」ボタンを押して発信
+    // 「📞」ボタン
     document.getElementById('call-start-btn').addEventListener('click', async () => {
       document.getElementById('call-start-btn').style.display = 'none';
       document.getElementById('call-end-btn').style.display = 'flex';
-      
-      // スマホブロック対策: 音声タグをアクティブにする
       document.getElementById('remote-audio').play().catch(()=>{});
       await startWebRTC(true);
     });
@@ -347,16 +357,17 @@
     // 「切断」ボタン
     document.getElementById('call-end-btn').addEventListener('click', () => {
       rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'hangup', sender: MY_NAME } });
+      stopRingtone();
       cleanupWebRTC();
     });
 
-    // 「出る」ボタン（着信ポップアップ）
+    // 「出る」ボタン
     document.getElementById('answer-btn').addEventListener('click', async () => {
+      stopRingtone();
       document.getElementById('incoming-call-modal').style.display = 'none';
       document.getElementById('call-start-btn').style.display = 'none';
       document.getElementById('call-end-btn').style.display = 'flex';
       
-      // スマホブロック対策: ユーザーがタップした瞬間に再生をアクティブにする
       document.getElementById('remote-audio').play().catch(()=>{});
 
       await startWebRTC(false);
@@ -369,8 +380,9 @@
       }
     });
 
-    // 「拒否」ボタン（着信ポップアップ）
+    // 「拒否」ボタン
     document.getElementById('decline-btn').addEventListener('click', () => {
+      stopRingtone();
       document.getElementById('incoming-call-modal').style.display = 'none';
       rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'decline', sender: MY_NAME } });
     });
