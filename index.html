@@ -131,6 +131,9 @@
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4bGhpdnd1eWZzamx5ZGJqaGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NDE5NDYsImV4cCI6MjEwODUxNzk0Nn0.9_hBOLttjOlM1xaZlQmekR1Tt5_zEYQL1ltuMozCAS8';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
     
+    // 前回ログイン時のユーザー情報を取得（未ログイン時は空）
+    let myRole = localStorage.getItem('chat_role') || '';
+    let myStatus = 'dummy'; // 404画面ではdummy
     let MY_NAME = '';
     let currentMode = '';
     let isLocked = false;
@@ -150,6 +153,53 @@
     const sendBtn = document.getElementById('send-btn');
     const fileLabel = document.getElementById('file-label');
     const onlineStatus = document.getElementById('online-status');
+
+    // ----------------- プレセンス（オンライン状態）の初期化 -----------------
+    function initPresence() {
+      presenceChannel = supabaseClient.channel('online-users');
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = presenceChannel.presenceState();
+          let shodenState = 'offline';
+          let juwadenState = 'offline';
+          
+          for (const key in newState) {
+            newState[key].forEach(p => {
+              if (p.user_name === 'shoden') {
+                if (p.status === 'active') shodenState = 'active';
+                else if (p.status === 'dummy' && shodenState !== 'active') shodenState = 'dummy';
+              }
+              if (p.user_name === 'juwaden') {
+                if (p.status === 'active') juwadenState = 'active';
+                else if (p.status === 'dummy' && juwadenState !== 'active') juwadenState = 'dummy';
+              }
+            });
+          }
+          
+          // 自分が「shoden」なら「juwaden」の状態を見る。逆なら「shoden」を見る。
+          const targetState = (myRole === 'shoden' || MY_NAME === 'shoden') ? juwadenState : shodenState;
+          
+          if (targetState === 'active') {
+            onlineStatus.textContent = '🟢 オンライン'; 
+            onlineStatus.style.backgroundColor = '#40c057';
+          } else if (targetState === 'dummy') {
+            onlineStatus.textContent = '🟡 半分オンライン'; 
+            onlineStatus.style.backgroundColor = '#fab005';
+          } else {
+            onlineStatus.textContent = '⚪️ オフライン'; 
+            onlineStatus.style.backgroundColor = '#adb5bd';
+          }
+        })
+        .subscribe(async (status) => {
+          // 前回ログインの記憶（myRole）があれば、404画面を開いた瞬間からトラッキング開始
+          if (status === 'SUBSCRIBED' && myRole) {
+            await presenceChannel.track({ user_name: myRole, status: myStatus });
+          }
+        });
+    }
+
+    // ページを読み込んだ瞬間（404画面表示時）からプレセンスを起動する
+    initPresence();
 
     const _0x4a9b = [
       "%E3%81%82%E3%81%84%E3%81%86%E3%81%88%E3%81%8A", 
@@ -172,16 +222,27 @@
     });
 
     function startChat(mode) {
-      currentMode = mode; MY_NAME = mode;
+      currentMode = mode; 
+      MY_NAME = mode;
+      
+      // パスワード入力後、現在のRoleを保存＆ステータスをActiveに切り替え
+      localStorage.setItem('chat_role', mode);
+      myRole = mode;
+      myStatus = 'active';
+
       dummyScreen.style.display = 'none';
       chatApp.style.display = 'flex';
       chatApp.classList.add('chat-mode-' + mode);
       document.title = mode === 'shoden' ? '俺' : 'ゆゆっぴ';
-      header.style.display = mode === 'shoden' ? 'flex' : 'none';
       
+      // ゆゆっぴ側にもヘッダー（オンライン状態）が見えるようにする
+      header.style.display = 'flex';
       if (mode === 'shoden') {
-        onlineStatus.style.display = 'inline-block';
+        lockBtn.style.display = 'block';
+      } else {
+        lockBtn.style.display = 'none'; // ロックボタンは俺(shoden)だけ表示
       }
+      onlineStatus.style.display = 'inline-block';
 
       if ('Notification' in window) {
         if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
@@ -191,10 +252,24 @@
 
       if (!isAppInitialized) { 
         initApp(); 
-        setupPresence(); 
         setupWebRTC();
         isAppInitialized = true; 
       }
+
+      // チャット画面に入ったので、アクティブ状態として再トラック
+      if (presenceChannel && presenceChannel.state === 'joined') {
+        presenceChannel.track({ user_name: myRole, status: myStatus });
+      }
+
+      // ゆゆっぴが入室した時のみオンライン履歴をシステムメッセージとして残す
+      if (mode === 'juwaden') {
+        const now = new Date();
+        const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        supabaseClient.from('messages').insert([{ 
+          sender: 'system_online_history', content: `🟢 相手がオンラインになりました (${timeStr})`, file_url: null, file_type: null 
+        }]);
+      }
+
       resetActivityTimers();
     }
 
@@ -217,37 +292,6 @@
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
           const bubble = document.getElementById(`msg-${payload.new.id}` || `msg-${payload.old.id}`); if (bubble) bubble.remove();
         }).subscribe();
-    }
-    
-    function setupPresence() {
-      presenceChannel = supabaseClient.channel('online-users');
-      presenceChannel
-        .on('presence', { event: 'sync' }, () => {
-          const newState = presenceChannel.presenceState();
-          let isJuwadenOnline = false;
-          for (const key in newState) {
-            newState[key].forEach(p => { if (p.user_name === 'juwaden') isJuwadenOnline = true; });
-          }
-          if (MY_NAME === 'shoden') {
-            if (isJuwadenOnline) {
-              onlineStatus.textContent = '🟢 オンライン'; onlineStatus.style.backgroundColor = '#40c057';
-            } else {
-              onlineStatus.textContent = '⚪️ オフライン'; onlineStatus.style.backgroundColor = '#adb5bd';
-            }
-          }
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await presenceChannel.track({ user_name: MY_NAME });
-            if (MY_NAME === 'juwaden') {
-              const now = new Date();
-              const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-              await supabaseClient.from('messages').insert([{ 
-                sender: 'system_online_history', content: `🟢 相手がオンラインになりました (${timeStr})`, file_url: null, file_type: null 
-              }]);
-            }
-          }
-        });
     }
 
     // ---------- 通話(WebRTC) ----------
