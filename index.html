@@ -133,7 +133,7 @@
     
     // 自分が「俺（shoden）」としてログインしたことがあるブラウザかチェック
     let knownRole = localStorage.getItem('chat_role') || 'unknown';
-    // 404画面を開いた時、俺なら「shoden_dummy」、相手（ゆゆっぴや不明）なら「dummy」として区別
+    // 404画面を開いた時、俺のブラウザなら「shoden_dummy」、相手（ゆゆっぴや不明）なら「dummy」として区別
     let myClientType = (knownRole === 'shoden') ? 'shoden_dummy' : 'dummy'; 
 
     let MY_NAME = '';
@@ -142,9 +142,9 @@
     let isAppInitialized = false;
     let presenceChannel;
 
-    // リロード時の記録サボり防止用フラグ（スクリプトのメモリに持つ）
-    let hasLoggedDummy = false;
-    let hasLoggedOnline = false;
+    // リロードすれば何度でもテストできるように、メモリ上の変数で制御する
+    let isDummyLogged = false;
+    let isOnlineLogged = false;
 
     const dummyScreen = document.getElementById('dummy-screen');
     const secretInput = document.getElementById('secret-input');
@@ -172,7 +172,7 @@
           for (const key in newState) {
             newState[key].forEach(p => {
               if (p.type === 'juwaden') hasJuwaden = true;
-              if (p.type === 'dummy') hasDummy = true; // 相手側のダミーだけを検知（俺のshoden_dummyは無視）
+              if (p.type === 'dummy') hasDummy = true; // 相手側のダミーだけを検知
             });
           }
           
@@ -194,15 +194,17 @@
             await presenceChannel.track({ type: myClientType });
             
             // 相手側がダミー画面（404）を開いたタイミングでDBに履歴を残す
-            if (myClientType === 'dummy' && !hasLoggedDummy) {
-              hasLoggedDummy = true;
+            if (myClientType === 'dummy' && !isDummyLogged) {
+              isDummyLogged = true;
               const now = new Date();
               const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+              
+              // ゆゆっぴ側のブラウザが裏でこっそりDBに書き込む
               supabaseClient.from('messages').insert([{ 
                 sender: 'system_online_history', 
                 content: `🟡 相手がダミー画面を開きました (半分オンライン) (${timeStr})`, 
                 file_url: null, file_type: null 
-              }]);
+              }]).then();
             }
           }
         });
@@ -227,7 +229,6 @@
       if (_0x1c === _0x4a9b[4]) { 
         startChat('shoden'); e.target.value = ''; 
       } else if (_0x1c === _0x4a9b[1] || _0x1c === _0x4a9b[2]) { 
-        // 「あむ」でも「あむろとるうく...」でも入れる
         startChat('juwaden'); e.target.value = ''; 
       }
     });
@@ -270,15 +271,15 @@
       }
 
       // 相手がログイン（オンライン化）したタイミングでDBに履歴を残す
-      if (mode === 'juwaden' && !hasLoggedOnline) {
-        hasLoggedOnline = true;
+      if (mode === 'juwaden' && !isOnlineLogged) {
+        isOnlineLogged = true;
         const now = new Date();
         const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         supabaseClient.from('messages').insert([{ 
           sender: 'system_online_history', 
           content: `🟢 相手がチャットに入室しました (オンライン) (${timeStr})`, 
           file_url: null, file_type: null 
-        }]);
+        }]).then();
       }
 
       resetActivityTimers();
