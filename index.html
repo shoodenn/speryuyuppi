@@ -168,8 +168,11 @@
         onlineStatus.style.display = 'inline-block';
       }
 
-      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-        Notification.requestPermission();
+      // 通知機能対応ブラウザのみ権限リクエストを行う（エラー回避）
+      if ('Notification' in window) {
+        if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+          Notification.requestPermission();
+        }
       }
 
       if (!isAppInitialized) { 
@@ -193,7 +196,8 @@
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
           appendMessage(payload.new.id, payload.new.sender, payload.new.content, payload.new.file_url, payload.new.file_type);
           
-          if (payload.new.sender !== MY_NAME && document.hidden && Notification.permission === 'granted') {
+          // 通知機能対応ブラウザのみプッシュ通知を出す（エラー回避）
+          if (payload.new.sender !== MY_NAME && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
             new Notification('新着メッセージ✨', { body: payload.new.content || 'ファイルが届いたよ！' });
           }
         })
@@ -404,7 +408,8 @@
 
       if (content) {
         const textSpan = document.createElement('span');
-        const parts = content.split(/(https?:\/\/[^\s]+)/g);
+        // contentがnull等の場合も安全に処理
+        const parts = String(content).split(/(https?:\/\/[^\s]+)/g);
         parts.forEach(part => {
           if (part.match(/(https?:\/\/[^\s]+)/g)) {
             const link = document.createElement('a'); link.href = part; link.target = '_blank'; link.textContent = part; textSpan.appendChild(link);
@@ -415,7 +420,7 @@
 
       if (fileUrl) {
         if (content) bubble.appendChild(document.createElement('br'));
-        const type = fileType ? fileType.toLowerCase() : '';
+        const type = fileType ? String(fileType).toLowerCase() : '';
         if (type.startsWith('image/')) {
           const img = document.createElement('img'); img.src = fileUrl; bubble.appendChild(img);
         } else if (type.startsWith('video/')) {
