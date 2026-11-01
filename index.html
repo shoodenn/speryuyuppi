@@ -31,10 +31,7 @@
       caret-color: transparent; font-size: 16px; text-align: center; transition: 0.3s; 
     }
     #secret-input:focus {
-      color: #aaa; 
-      caret-color: #aaa; 
-      background-color: #fafafa; 
-      border-top: 1px dashed #eee; 
+      color: #aaa; caret-color: #aaa; background-color: #fafafa; border-top: 1px dashed #eee;
     }
 
     #chat-app { display: none; flex-direction: column; background-color: #f7f9fc; z-index: 20; }
@@ -77,6 +74,9 @@
     #send-btn { color: white; border: none; border-radius: 18px; padding: 10px 15px; font-size: 15px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
     .chat-mode-shoden #send-btn { background-color: #4dabf7; }
     .chat-mode-juwaden #send-btn { background-color: #f06595; }
+
+    #call-start-btn { background-color: #eebefa; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 18px; flex-shrink: 0; }
+    #call-end-btn { display: none; background-color: #ff8787; border: none; border-radius: 50%; color: white; width: 40px; height: 40px; justify-content: center; align-items: center; cursor: pointer; font-size: 11px; font-weight: bold; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -103,6 +103,8 @@
     </div>
     <div id="chat-box"></div>
     <div id="input-area">
+      <button id="call-start-btn">📞</button>
+      <button id="call-end-btn">切断</button>
       <label id="file-label">📁<input type="file" id="file-input"></label>
       <textarea id="message-input" rows="1" placeholder="メッセージを入力..."></textarea>
       <button id="send-btn">送信</button>
@@ -166,12 +168,16 @@
         onlineStatus.style.display = 'inline-block';
       }
 
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+
       if (!isAppInitialized) { 
         initApp(); 
         setupPresence(); 
+        setupWebRTC();
         isAppInitialized = true; 
       }
-      
       resetActivityTimers();
     }
 
@@ -186,6 +192,10 @@
       supabaseClient.channel('public:messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
           appendMessage(payload.new.id, payload.new.sender, payload.new.content, payload.new.file_url, payload.new.file_type);
+          
+          if (payload.new.sender !== MY_NAME && document.hidden && Notification.permission === 'granted') {
+            new Notification('新着メッセージ✨', { body: payload.new.content || 'ファイルが届いたよ！' });
+          }
         })
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
           const bubble = document.getElementById(`msg-${payload.new.id}` || `msg-${payload.old.id}`); if (bubble) bubble.remove();
@@ -194,45 +204,117 @@
     
     function setupPresence() {
       presenceChannel = supabaseClient.channel('online-users');
-      
       presenceChannel
         .on('presence', { event: 'sync' }, () => {
           const newState = presenceChannel.presenceState();
           let isJuwadenOnline = false;
-          
           for (const key in newState) {
-            newState[key].forEach(p => {
-              if (p.user_name === 'juwaden') isJuwadenOnline = true;
-            });
+            newState[key].forEach(p => { if (p.user_name === 'juwaden') isJuwadenOnline = true; });
           }
-          
           if (MY_NAME === 'shoden') {
             if (isJuwadenOnline) {
-              onlineStatus.textContent = '🟢 オンライン';
-              onlineStatus.style.backgroundColor = '#40c057';
+              onlineStatus.textContent = '🟢 オンライン'; onlineStatus.style.backgroundColor = '#40c057';
             } else {
-              onlineStatus.textContent = '⚪️ オフライン';
-              onlineStatus.style.backgroundColor = '#adb5bd';
+              onlineStatus.textContent = '⚪️ オフライン'; onlineStatus.style.backgroundColor = '#adb5bd';
             }
           }
         })
         .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
             await presenceChannel.track({ user_name: MY_NAME });
-            
-            // 相手(juwaden)がオンラインになった瞬間に、俺(shoden)向けに履歴を残す
             if (MY_NAME === 'juwaden') {
               const now = new Date();
               const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-              const historyText = `🟢 相手がオンラインになりました (${timeStr})`;
-              
               await supabaseClient.from('messages').insert([{ 
-                sender: 'system_online_history', content: historyText, file_url: null, file_type: null 
+                sender: 'system_online_history', content: `🟢 相手がオンラインになりました (${timeStr})`, file_url: null, file_type: null 
               }]);
             }
           }
         });
     }
+
+    // ---------- 通話(WebRTC) ----------
+    let localStream;
+    let peerConnection;
+    let rtcChannel;
+
+    function setupWebRTC() {
+      rtcChannel = supabaseClient.channel('webrtc-signaling');
+      rtcChannel.on('broadcast', { event: 'signal' }, async (payload) => {
+        const { type, data, sender } = payload.payload;
+        if (sender === MY_NAME) return;
+
+        if (type === 'offer') {
+          if (confirm('通話がかかってきたよ！📞 出る？')) {
+            await startWebRTC(false);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'answer', data: answer, sender: MY_NAME } });
+            
+            document.getElementById('call-start-btn').style.display = 'none';
+            document.getElementById('call-end-btn').style.display = 'flex';
+          }
+        } else if (type === 'answer' && peerConnection) {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        } else if (type === 'candidate' && peerConnection) {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data));
+        } else if (type === 'hangup') {
+          cleanupWebRTC();
+          alert('通話が終わったよー👋');
+        }
+      }).subscribe();
+    }
+
+    async function startWebRTC(isCaller = true) {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      peerConnection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'candidate', data: event.candidate, sender: MY_NAME } });
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        let remoteAudio = document.getElementById('remote-audio');
+        if (!remoteAudio) {
+          remoteAudio = document.createElement('audio');
+          remoteAudio.id = 'remote-audio';
+          remoteAudio.autoplay = true;
+          document.body.appendChild(remoteAudio);
+        }
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      if (isCaller) {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'offer', data: offer, sender: MY_NAME } });
+      }
+    }
+
+    function cleanupWebRTC() {
+      if (peerConnection) { peerConnection.close(); peerConnection = null; }
+      if (localStream) { localStream.getTracks().forEach(track => track.stop()); localStream = null; }
+      const remoteAudio = document.getElementById('remote-audio');
+      if (remoteAudio) remoteAudio.remove();
+      document.getElementById('call-start-btn').style.display = 'flex';
+      document.getElementById('call-end-btn').style.display = 'none';
+    }
+
+    document.getElementById('call-start-btn').addEventListener('click', async () => {
+      document.getElementById('call-start-btn').style.display = 'none';
+      document.getElementById('call-end-btn').style.display = 'flex';
+      await startWebRTC(true);
+    });
+
+    document.getElementById('call-end-btn').addEventListener('click', () => {
+      rtcChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'hangup', sender: MY_NAME } });
+      cleanupWebRTC();
+    });
+    // ----------------------------------
 
     async function initLockState() {
       const { data } = await supabaseClient.from('settings').select('is_locked').eq('id', 1).single();
@@ -256,10 +338,9 @@
       
       const now = new Date();
       const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      const text = `ロック解除の申請 ${timeStr}`;
       
       const { error } = await supabaseClient.from('messages').insert([{ 
-        sender: MY_NAME, content: text, file_url: null, file_type: null 
+        sender: MY_NAME, content: `ロック解除の申請 ${timeStr}`, file_url: null, file_type: null 
       }]);
       
       if (!error) {
@@ -282,24 +363,17 @@
 
     setInterval(() => {
       const now = new Date();
-      if (now.getHours() === 15 && now.getMinutes() === 0 && now.getSeconds() < 10) {
-        enforceAutoLock();
-      }
+      if (now.getHours() === 15 && now.getMinutes() === 0 && now.getSeconds() < 10) enforceAutoLock();
     }, 10000);
 
     function resetActivityTimers() {
       if (!isAppInitialized) return;
-
       clearTimeout(autoLockTimer);
       const h = new Date().getHours();
-      if (h >= 15 || h < 3) {
-        autoLockTimer = setTimeout(enforceAutoLock, 5 * 60 * 1000); 
-      }
+      if (h >= 15 || h < 3) autoLockTimer = setTimeout(enforceAutoLock, 5 * 60 * 1000); 
 
       clearTimeout(dummyRedirectTimer);
-      dummyRedirectTimer = setTimeout(() => {
-        window.location.reload(); 
-      }, 10 * 60 * 1000); 
+      dummyRedirectTimer = setTimeout(() => { window.location.reload(); }, 10 * 60 * 1000); 
     }
     
     document.addEventListener('click', resetActivityTimers);
@@ -315,12 +389,9 @@
     });
 
     function appendMessage(id, sender, content, fileUrl, fileType) {
-      // 履歴メッセージは俺(shoden)の画面にだけ表示する！
       if (sender === 'system_online_history' && MY_NAME !== 'shoden') return;
 
       const wrapper = document.createElement('div');
-      
-      // 俺自身からのメッセージ、もしくはシステム履歴の場合は右側に表示
       const isOwnOrSystem = (sender === MY_NAME || sender === 'system_online_history');
       wrapper.classList.add('message-wrapper', isOwnOrSystem ? 'my-wrapper' : 'their-wrapper');
       wrapper.id = `msg-${id}`;
@@ -329,7 +400,6 @@
       let bubbleClass = 'their-message';
       if (sender === MY_NAME) bubbleClass = 'my-message';
       else if (sender === 'system_online_history') bubbleClass = 'system-message';
-      
       bubble.classList.add('bubble', bubbleClass);
 
       if (content) {
@@ -359,12 +429,9 @@
       deleteBtn.classList.add('delete-btn'); deleteBtn.textContent = '🗑️';
       deleteBtn.onclick = async () => { if (confirm('削除する？')) await supabaseClient.rpc('delete_message', { msg_id: id }); };
       
-      // 削除ボタンは右側メッセージなら左に置く
-      if (isOwnOrSystem) { 
-        wrapper.appendChild(deleteBtn); wrapper.appendChild(bubble); 
-      } else { 
-        wrapper.appendChild(bubble); wrapper.appendChild(deleteBtn); 
-      }
+      if (isOwnOrSystem) { wrapper.appendChild(deleteBtn); wrapper.appendChild(bubble); } 
+      else { wrapper.appendChild(bubble); wrapper.appendChild(deleteBtn); }
+      
       chatBox.appendChild(wrapper); chatBox.scrollTop = chatBox.scrollHeight;
     }
 
