@@ -131,8 +131,11 @@
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4bGhpdnd1eWZzamx5ZGJqaGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NDE5NDYsImV4cCI6MjEwODUxNzk0Nn0.9_hBOLttjOlM1xaZlQmekR1Tt5_zEYQL1ltuMozCAS8';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
     
-    // 現在のクライアントの状態（初期値は404画面＝dummy）
-    let myClientType = 'dummy'; 
+    // 自分が「俺（shoden）」としてログインしたことがあるブラウザかチェック
+    let knownRole = localStorage.getItem('chat_role') || 'unknown';
+    // 404画面を開いた時、俺なら「shoden_dummy」、相手（ゆゆっぴや不明）なら「dummy」として区別
+    let myClientType = (knownRole === 'shoden') ? 'shoden_dummy' : 'dummy'; 
+
     let MY_NAME = '';
     let currentMode = '';
     let isLocked = false;
@@ -165,11 +168,11 @@
           for (const key in newState) {
             newState[key].forEach(p => {
               if (p.type === 'juwaden') hasJuwaden = true;
-              if (p.type === 'dummy') hasDummy = true;
+              if (p.type === 'dummy') hasDummy = true; // 相手側のダミーだけを検知（俺のshoden_dummyは無視）
             });
           }
           
-          // ステータスの表示更新（※俺の画面にだけ影響する）
+          // ステータスの表示更新（※俺の画面のヘッダーにだけ影響する）
           if (hasJuwaden) {
             onlineStatus.textContent = '🟢 オンライン'; 
             onlineStatus.style.backgroundColor = '#40c057';
@@ -182,14 +185,26 @@
           }
         })
         .subscribe(async (status) => {
-          // 404画面を開いた瞬間から「dummy」としてトラッキング開始
+          // 404画面を開いた瞬間からトラッキング開始
           if (status === 'SUBSCRIBED') {
             await presenceChannel.track({ type: myClientType });
+            
+            // 相手側がダミー画面（404）を開いたタイミングでDBに履歴を残す
+            if (myClientType === 'dummy' && !sessionStorage.getItem('half_online_logged')) {
+              sessionStorage.setItem('half_online_logged', 'true');
+              const now = new Date();
+              const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+              supabaseClient.from('messages').insert([{ 
+                sender: 'system_online_history', 
+                content: `🟡 相手がダミー画面を開きました (半分オンライン) (${timeStr})`, 
+                file_url: null, file_type: null 
+              }]);
+            }
           }
         });
     }
 
-    // ページを読み込んだ瞬間（404画面表示時）からプレセンスを起動する
+    // ページを読み込んだ瞬間からプレセンス起動
     initPresence();
 
     const _0x4a9b = [
@@ -208,6 +223,7 @@
       if (_0x1c === _0x4a9b[4]) { 
         startChat('shoden'); e.target.value = ''; 
       } else if (_0x1c === _0x4a9b[1] || _0x1c === _0x4a9b[2]) { 
+        // 「あむ」でも「あむろとるうく...」でも入れる
         startChat('juwaden'); e.target.value = ''; 
       }
     });
@@ -216,8 +232,9 @@
       currentMode = mode; 
       MY_NAME = mode;
       
-      // パスワード入力後、現在のクライアントの状態をアクティブな名前に上書き
+      // ログイン後、現在のクライアントの状態をアクティブな名前に上書き
       myClientType = mode;
+      localStorage.setItem('chat_role', mode);
 
       dummyScreen.style.display = 'none';
       chatApp.style.display = 'flex';
@@ -243,17 +260,20 @@
         isAppInitialized = true; 
       }
 
-      // チャット画面に入ったので、「dummy」から「shoden」または「juwaden」として再トラック
+      // ログインしたので、状態を更新（dummyからshodenまたはjuwadenへ）
       if (presenceChannel && presenceChannel.state === 'joined') {
         presenceChannel.track({ type: myClientType });
       }
 
-      // ゆゆっぴが入室した時のみオンライン履歴をシステムメッセージとして残す
-      if (mode === 'juwaden') {
+      // 相手がログイン（オンライン化）したタイミングでDBに履歴を残す
+      if (mode === 'juwaden' && !sessionStorage.getItem('online_logged')) {
+        sessionStorage.setItem('online_logged', 'true');
         const now = new Date();
         const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         supabaseClient.from('messages').insert([{ 
-          sender: 'system_online_history', content: `🟢 相手がオンラインになりました (${timeStr})`, file_url: null, file_type: null 
+          sender: 'system_online_history', 
+          content: `🟢 相手がチャットに入室しました (オンライン) (${timeStr})`, 
+          file_url: null, file_type: null 
         }]);
       }
 
@@ -305,7 +325,6 @@
           incomingOffer = data;
           document.getElementById('incoming-call-modal').style.display = 'block';
           
-          // 着信音の再生とバイブ（Android用）
           document.getElementById('ringtone-audio').play().catch(()=>{});
           if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 1000]);
 
@@ -492,6 +511,7 @@
     });
 
     function appendMessage(id, sender, content, fileUrl, fileType) {
+      // 履歴メッセージは俺(shoden)の画面にだけ表示する！
       if (sender === 'system_online_history' && MY_NAME !== 'shoden') return;
 
       const wrapper = document.createElement('div');
