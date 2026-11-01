@@ -131,9 +131,8 @@
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4bGhpdnd1eWZzamx5ZGJqaGZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NDE5NDYsImV4cCI6MjEwODUxNzk0Nn0.9_hBOLttjOlM1xaZlQmekR1Tt5_zEYQL1ltuMozCAS8';
     const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
     
-    // 前回ログイン時のユーザー情報を取得（未ログイン時は空）
-    let myRole = localStorage.getItem('chat_role') || '';
-    let myStatus = 'dummy'; // 404画面ではdummy
+    // 現在のクライアントの状態（初期値は404画面＝dummy）
+    let myClientType = 'dummy'; 
     let MY_NAME = '';
     let currentMode = '';
     let isLocked = false;
@@ -160,29 +159,21 @@
       presenceChannel
         .on('presence', { event: 'sync' }, () => {
           const newState = presenceChannel.presenceState();
-          let shodenState = 'offline';
-          let juwadenState = 'offline';
+          let hasJuwaden = false;
+          let hasDummy = false;
           
           for (const key in newState) {
             newState[key].forEach(p => {
-              if (p.user_name === 'shoden') {
-                if (p.status === 'active') shodenState = 'active';
-                else if (p.status === 'dummy' && shodenState !== 'active') shodenState = 'dummy';
-              }
-              if (p.user_name === 'juwaden') {
-                if (p.status === 'active') juwadenState = 'active';
-                else if (p.status === 'dummy' && juwadenState !== 'active') juwadenState = 'dummy';
-              }
+              if (p.type === 'juwaden') hasJuwaden = true;
+              if (p.type === 'dummy') hasDummy = true;
             });
           }
           
-          // 自分が「shoden」なら「juwaden」の状態を見る。逆なら「shoden」を見る。
-          const targetState = (myRole === 'shoden' || MY_NAME === 'shoden') ? juwadenState : shodenState;
-          
-          if (targetState === 'active') {
+          // ステータスの表示更新（※俺の画面にだけ影響する）
+          if (hasJuwaden) {
             onlineStatus.textContent = '🟢 オンライン'; 
             onlineStatus.style.backgroundColor = '#40c057';
-          } else if (targetState === 'dummy') {
+          } else if (hasDummy) {
             onlineStatus.textContent = '🟡 半分オンライン'; 
             onlineStatus.style.backgroundColor = '#fab005';
           } else {
@@ -191,9 +182,9 @@
           }
         })
         .subscribe(async (status) => {
-          // 前回ログインの記憶（myRole）があれば、404画面を開いた瞬間からトラッキング開始
-          if (status === 'SUBSCRIBED' && myRole) {
-            await presenceChannel.track({ user_name: myRole, status: myStatus });
+          // 404画面を開いた瞬間から「dummy」としてトラッキング開始
+          if (status === 'SUBSCRIBED') {
+            await presenceChannel.track({ type: myClientType });
           }
         });
     }
@@ -217,7 +208,6 @@
       if (_0x1c === _0x4a9b[4]) { 
         startChat('shoden'); e.target.value = ''; 
       } else if (_0x1c === _0x4a9b[1] || _0x1c === _0x4a9b[2]) { 
-        // [1]あむ でも [2]あむろとるうくとふるぱわーりっく でも入れるように条件を追加
         startChat('juwaden'); e.target.value = ''; 
       }
     });
@@ -226,24 +216,20 @@
       currentMode = mode; 
       MY_NAME = mode;
       
-      // パスワード入力後、現在のRoleを保存＆ステータスをActiveに切り替え
-      localStorage.setItem('chat_role', mode);
-      myRole = mode;
-      myStatus = 'active';
+      // パスワード入力後、現在のクライアントの状態をアクティブな名前に上書き
+      myClientType = mode;
 
       dummyScreen.style.display = 'none';
       chatApp.style.display = 'flex';
       chatApp.classList.add('chat-mode-' + mode);
       document.title = mode === 'shoden' ? '俺' : 'ゆゆっぴ';
       
-      // ゆゆっぴ側にもヘッダー（オンライン状態）が見えるようにする
-      header.style.display = 'flex';
+      // ⚠️ 相手側(juwaden)はヘッダー（俺、オンライン表示、ロックボタン）を完全に非表示！
+      header.style.display = mode === 'shoden' ? 'flex' : 'none';
+      
       if (mode === 'shoden') {
-        lockBtn.style.display = 'block';
-      } else {
-        lockBtn.style.display = 'none'; // ロックボタンは俺(shoden)だけ表示
+        onlineStatus.style.display = 'inline-block';
       }
-      onlineStatus.style.display = 'inline-block';
 
       if ('Notification' in window) {
         if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
@@ -257,9 +243,9 @@
         isAppInitialized = true; 
       }
 
-      // チャット画面に入ったので、アクティブ状態として再トラック
+      // チャット画面に入ったので、「dummy」から「shoden」または「juwaden」として再トラック
       if (presenceChannel && presenceChannel.state === 'joined') {
-        presenceChannel.track({ user_name: myRole, status: myStatus });
+        presenceChannel.track({ type: myClientType });
       }
 
       // ゆゆっぴが入室した時のみオンライン履歴をシステムメッセージとして残す
