@@ -142,6 +142,10 @@
     let isAppInitialized = false;
     let presenceChannel;
 
+    // リロード時の記録サボり防止用フラグ（スクリプトのメモリに持つ）
+    let hasLoggedDummy = false;
+    let hasLoggedOnline = false;
+
     const dummyScreen = document.getElementById('dummy-screen');
     const secretInput = document.getElementById('secret-input');
     const chatApp = document.getElementById('chat-app');
@@ -190,8 +194,8 @@
             await presenceChannel.track({ type: myClientType });
             
             // 相手側がダミー画面（404）を開いたタイミングでDBに履歴を残す
-            if (myClientType === 'dummy' && !sessionStorage.getItem('half_online_logged')) {
-              sessionStorage.setItem('half_online_logged', 'true');
+            if (myClientType === 'dummy' && !hasLoggedDummy) {
+              hasLoggedDummy = true;
               const now = new Date();
               const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
               supabaseClient.from('messages').insert([{ 
@@ -266,8 +270,8 @@
       }
 
       // 相手がログイン（オンライン化）したタイミングでDBに履歴を残す
-      if (mode === 'juwaden' && !sessionStorage.getItem('online_logged')) {
-        sessionStorage.setItem('online_logged', 'true');
+      if (mode === 'juwaden' && !hasLoggedOnline) {
+        hasLoggedOnline = true;
         const now = new Date();
         const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         supabaseClient.from('messages').insert([{ 
